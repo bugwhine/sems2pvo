@@ -1,0 +1,12 @@
+{
+    "updateperiod" : 15,
+    "pvoutput" : {
+        "apikey" : "0000000000000000000000000000000000000000",
+        "systemid" : 12345
+    },
+    "sems" : {
+        "system_id" : "00000000-0000-0000-0000-000000000000",
+        "account" : "your@email.com",
+        "password" : "topsecret"
+    }
+}
