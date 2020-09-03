@@ -36,6 +36,9 @@ class Sems2Pvo():
         if (data['inverter'][0]['status'] == 1):
             active = data['inverter'][0]['invert_full']
             #v1 energy generation
+            #SEMS gives cumaltive for the day in 'e_day' with 0.1kWH resolution
+            #not worth posting to PVO which can calculate itself
+
             #v2 power generation
             v2 = active['pac'] 
             #v3 energy consumption
@@ -46,14 +49,15 @@ class Sems2Pvo():
             v6 = active['vac1']
 
             pvodata = { 'v2':v2, 'v5':v5, 'v6':v6 }
-            log("Posting to pvoutput")
+            log("Posting to pvoutput {0}W {1}'C {2}VAC".format(
+                pvodata['v2'], pvodata['v5'], pvodata['v6']))
             blockPrint()
             self.pvo.addstatus(pvodata)
             enablePrint()
         else:
             sleeping = data['inverter'][0]['invert_full']
-            log('Inverter has been sleeping since {0} having produced {1}kWH today'.format(
-                self.goodwetimeconvert(sleeping['last_time']), sleeping['eday']))
+            log('Inverter has been sleeping status={0} since {1} having produced {2}kWH today'.format(
+                sleeping['status'], self.goodwetimeconvert(sleeping['last_time']), sleeping['eday']))
 
 with open('config.json') as configfile:
     log("Parsing configuration")
