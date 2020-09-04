@@ -3,7 +3,7 @@ import os
 import json
 import pygoodwe
 import time
-from datetime import datetime
+import datetime
 from pvoutput import PVOutput
 
 def blockPrint():
@@ -14,7 +14,7 @@ def enablePrint():
     sys.stdout = sys.__stdout__
 
 def log(msg):
-    print('{0}:{1}'.format(datetime.now(),msg))
+    print('{0}:{1}'.format(datetime.datetime.now(),msg))
 
 class Sems2Pvo():
 
@@ -35,6 +35,12 @@ class Sems2Pvo():
         data = self.gwe.getCurrentReadings()
         if (data['inverter'][0]['status'] == 1):
             active = data['inverter'][0]['invert_full']
+
+            #workaround bug in library
+            hour = int(datetime.datetime.now().strftime("%H"))
+            minute = int(datetime.datetime.now().strftime("%M"))
+            t = datetime.time(hour=hour, minute=minute).strftime("%H:%M")
+
             #v1 energy generation
             #SEMS gives cumaltive for the day in 'e_day' with 0.1kWH resolution
             #not worth posting to PVO which can calculate itself
@@ -48,9 +54,17 @@ class Sems2Pvo():
             #v6 voltage  
             v6 = active['vac1']
 
-            pvodata = { 'v2':v2, 'v5':v5, 'v6':v6 }
+            pvodata = { 't':t, 'v2':v2, 'v5':v5, 'v6':v6 }
             log("Posting to pvoutput {0}W {1}'C {2}VAC".format(
                 pvodata['v2'], pvodata['v5'], pvodata['v6']))
+            blockPrint()
+            self.pvo.addstatus(pvodata)
+            enablePrint()
+        elif (data['inverter'][0]['status'] == 0):
+            waiting = data['inverter'][0]['invert_full']
+            log('Inverter is waiting')
+            pvodata = { 't':t, 'v2':0 }
+            log("Posting to pvoutput {0}W ".format(pvodata['v2']))
             blockPrint()
             self.pvo.addstatus(pvodata)
             enablePrint()
@@ -65,5 +79,8 @@ with open('config.json') as configfile:
     log("Initialising")
     sems2pvo = Sems2Pvo(config)
     while True:
+        t1 = datetime.datetime.now() + datetime.timedelta(minutes=config['updateperiod'])       
+        t2 = datetime.datetime(t1.year, t1.month, t1.day, t1.hour, 
+                int(t1.minute / config['updateperiod']) * config['updateperiod'])
+        time.sleep((t2-datetime.datetime.now()).total_seconds())
         sems2pvo.run()
-        time.sleep(config['updateperiod']*60)
