@@ -33,13 +33,14 @@ class Sems2Pvo():
     def run(self):
         log("Getting data from SEMS")
         data = self.gwe.getCurrentReadings()
+
+        #workaround bug in library
+        hour = int(datetime.datetime.now().strftime("%H"))
+        minute = int(datetime.datetime.now().strftime("%M"))
+        t = datetime.time(hour=hour, minute=minute).strftime("%H:%M")
+
         if (data['inverter'][0]['status'] == 1):
             active = data['inverter'][0]['invert_full']
-
-            #workaround bug in library
-            hour = int(datetime.datetime.now().strftime("%H"))
-            minute = int(datetime.datetime.now().strftime("%M"))
-            t = datetime.time(hour=hour, minute=minute).strftime("%H:%M")
 
             #v1 energy generation
             #SEMS gives cumaltive for the day in 'e_day' with 0.1kWH resolution
@@ -82,5 +83,7 @@ with open('config.json') as configfile:
         t1 = datetime.datetime.now() + datetime.timedelta(minutes=config['updateperiod'])       
         t2 = datetime.datetime(t1.year, t1.month, t1.day, t1.hour, 
                 int(t1.minute / config['updateperiod']) * config['updateperiod'])
-        time.sleep((t2-datetime.datetime.now()).total_seconds())
+        waitsec = (t2-datetime.datetime.now()).total_seconds()
+        log("Waiting for {0} seconds".format(int(waitsec))) 
+        time.sleep(waitsec)
         sems2pvo.run()
