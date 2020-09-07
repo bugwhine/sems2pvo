@@ -5,6 +5,7 @@ import pygoodwe
 import time
 import datetime
 from pvoutput import PVOutput
+import gzip
 
 def blockPrint():
     sys.stdout = open(os.devnull, 'w')
@@ -16,6 +17,7 @@ def enablePrint():
 def log(msg):
     print('{0}:{1}'.format(datetime.datetime.now(),msg))
 
+
 class Sems2Pvo():
 
     def __init__(self, config):
@@ -26,13 +28,22 @@ class Sems2Pvo():
         self.gwe = pygoodwe.API(self.config['sems']['system_id'],
                                 self.config['sems']['account'],
                                 self.config['sems']['password'])
+        if "debugfile" in self.config: 
+            self.debugfp = gzip.open(self.config['debugfile']+'.gz', 'w')
+ 
 
     def goodwetimeconvert(self, gwtime):
         return time.ctime(gwtime/1000)
 
+    def debug(self, data):
+        if hasattr(self, 'debugfp'): 
+            self.debugfp.write(bytes(str(data)+'\n','utf-8'))
+            self.debugfp.flush()
+
     def run(self):
         log("Getting data from SEMS")
         data = self.gwe.getCurrentReadings()
+        self.debug(data)
 
         #workaround bug in library
         hour = int(datetime.datetime.now().strftime("%H"))
