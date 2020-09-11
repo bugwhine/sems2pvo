@@ -74,8 +74,8 @@ class Sems2Pvo():
 
         plant = sems['inverter'][0]
         inverter = sems['inverter'][0]['invert_full']
-        last_refresh_time = datetime.datetime.strptime(plant['last_refresh_time'], '%d/%m/%Y %H:%M:%S')
-        time = datetime.datetime.strptime(plant['time'], '%d/%m/%Y %H:%M:%S')
+        last_refresh_time = datetime.datetime.strptime(plant['last_refresh_time'], '%m/%d/%Y %H:%M:%S')
+        time = datetime.datetime.strptime(plant['time'], '%m/%d/%Y %H:%M:%S')
         t = time.strftime("%H:%M")
         d = time.strftime("%Y%m%d")
 
