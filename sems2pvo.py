@@ -6,6 +6,7 @@ import time
 import datetime
 from pvoutput import PVOutput
 import gzip
+import ast
 
 def blockPrint():
     sys.stdout = open(os.devnull, 'w')
@@ -17,17 +18,40 @@ def enablePrint():
 def log(msg):
     print('{0}:{1}'.format(datetime.datetime.now(),msg))
 
+class SimGwe():
+    def __init__(self, filename):
+        self.fp = open(filename, encoding='utf-8')
+    
+    def getCurrentReadings(self):
+        line = self.fp.readline()
+        if line != '':
+            return ast.literal_eval(line)
+
+class SimPvo():
+    def __init__(self, filename):
+        self.fp = open(filename, 'wt')
+
+    def addstatus(self, data):
+        self.fp.write(str(data)+'\n')
 
 class Sems2Pvo():
 
     def __init__(self, config):
         self.config = config
 
-        self.pvo = PVOutput(self.config['pvoutput']['apikey'], 
-                            self.config['pvoutput']['systemid'])
-        self.gwe = pygoodwe.API(self.config['sems']['system_id'],
-                                self.config['sems']['account'],
-                                self.config['sems']['password'])
+        if "simpvofn" in self.config:
+            self.pvo = SimPvo(self.config["simpvofn"])
+        else:
+            self.pvo = PVOutput(self.config['pvoutput']['apikey'], 
+                                self.config['pvoutput']['systemid'])
+        
+        if "simgwefn" in self.config:
+            self.gwe = SimGwe(self.config["simgwefn"])
+        else: 
+            self.gwe = pygoodwe.API(self.config['sems']['system_id'],
+                                    self.config['sems']['account'],
+                                    self.config['sems']['password'])
+        
         if "debugfile" in self.config: 
             self.debugfp = gzip.open(self.config['debugfile']+'.gz', 'w')
  
@@ -42,59 +66,58 @@ class Sems2Pvo():
 
     def run(self):
         log("Getting data from SEMS")
-        data = self.gwe.getCurrentReadings()
-        self.debug(data)
+        sems = self.gwe.getCurrentReadings()
+        if sems == None:
+            return -1
 
-        #workaround bug in library
-        hour = int(datetime.datetime.now().strftime("%H"))
-        minute = int(datetime.datetime.now().strftime("%M"))
-        t = datetime.time(hour=hour, minute=minute).strftime("%H:%M")
+        self.debug(sems)
 
-        if (data['inverter'][0]['status'] == 1):
-            active = data['inverter'][0]['invert_full']
+        plant = sems['inverter'][0]
+        inverter = sems['inverter'][0]['invert_full']
+        last_refresh_time = datetime.datetime.strptime(plant['last_refresh_time'], '%d/%m/%Y %H:%M:%S')
+        time = datetime.datetime.strptime(plant['time'], '%d/%m/%Y %H:%M:%S')
+        t = time.strftime("%H:%M")
+        d = time.strftime("%Y%m%d")
 
+        if (inverter['status'] == 1):
             #v1 energy generation
             #SEMS gives cumaltive for the day in 'e_day' with 0.1kWH resolution
             #not worth posting to PVO which can calculate itself
 
             #v2 power generation
-            v2 = active['pac'] 
+            v2 = inverter['pac'] 
             #v3 energy consumption
             #v4 power consumption
             #v5 temperature
-            v5 = active['tempperature'] 
+            v5 = inverter['tempperature'] 
             #v6 voltage  
-            v6 = active['vac1']
+            v6 = inverter['vac1']
 
-            pvodata = { 't':t, 'v2':v2, 'v5':v5, 'v6':v6 }
-            log("Posting to pvoutput {0}W {1}'C {2}VAC".format(
-                pvodata['v2'], pvodata['v5'], pvodata['v6']))
-            blockPrint()
-            self.pvo.addstatus(pvodata)
-            enablePrint()
-        elif (data['inverter'][0]['status'] == 0):
-            waiting = data['inverter'][0]['invert_full']
-            log('Inverter is waiting')
-            pvodata = { 't':t, 'v2':0 }
-            log("Posting to pvoutput {0}W ".format(pvodata['v2']))
-            blockPrint()
-            self.pvo.addstatus(pvodata)
-            enablePrint()
+            pvodata = { 'd':d, 't':t, 'v2':v2, 'v5':v5, 'v6':v6 }
+            if (self.config['updateperiod'] == 0) or (time-last_refresh_time) < datetime.timedelta(minutes=self.config['updateperiod']):
+                log("Posting to pvoutput {0}W {1}'C {2}VAC".format(
+                    pvodata['v2'], pvodata['v5'], pvodata['v6']))
+                blockPrint()
+                self.pvo.addstatus(pvodata)
+                enablePrint()
+            else:
+                log("No update since "+plant['last_refresh_time'])
         else:
-            sleeping = data['inverter'][0]['invert_full']
-            log('Inverter has been sleeping status={0} since {1} having produced {2}kWH today'.format(
-                sleeping['status'], self.goodwetimeconvert(sleeping['last_time']), sleeping['eday']))
+            log('Inverter has been sleeping since {0} having produced {1}kWH today'.format(
+                plant['last_refresh_time'], inverter['eday']))
+        return 0
 
 with open('config.json') as configfile:
     log("Parsing configuration")
     config = json.load(configfile)
     log("Initialising")
     sems2pvo = Sems2Pvo(config)
-    while True:
-        t1 = datetime.datetime.now() + datetime.timedelta(minutes=config['updateperiod'])       
-        t2 = datetime.datetime(t1.year, t1.month, t1.day, t1.hour, 
-                int(t1.minute / config['updateperiod']) * config['updateperiod'])
-        waitsec = (t2-datetime.datetime.now()).total_seconds()
-        log("Waiting for {0} seconds".format(int(waitsec))) 
-        time.sleep(waitsec)
-        sems2pvo.run()
+    while sems2pvo.run() >= 0:
+        if (config['updateperiod'] > 0):
+            t1 = datetime.datetime.now() + datetime.timedelta(minutes=config['updateperiod'])       
+            t2 = datetime.datetime(t1.year, t1.month, t1.day, t1.hour, 
+                    int(t1.minute / config['updateperiod']) * config['updateperiod'])
+            waitsec = (t2-datetime.datetime.now()).total_seconds()
+            log("Waiting for {0} seconds".format(int(waitsec))) 
+            time.sleep(waitsec)
+
